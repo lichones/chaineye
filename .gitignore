@@ -1,0 +1,31 @@
+# --- Python env & caches ---
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Raw Elliptic dataset (665MB) — NOT needed at runtime (model artifacts are in app/ml) ---
+data/
+
+# --- Node / frontend build ---
+**/node_modules/
+app/frontend/dist/
+
+# --- Env & secrets ---
+.env.local
+**/.env.local
+*.key
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# --- Docker verify images / logs ---
+*.log

@@ -1,0 +1,47 @@
+# =============================================================================
+# Docker build-context excludes for ChainEye.
+# Goal: keep the image small and NEVER ship the 665MB raw dataset.
+# =============================================================================
+
+# --- Raw datasets (665MB Elliptic CSVs) — must NOT enter the image ---
+data/
+
+# --- Python virtualenv & caches ---
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node build artifacts (frontend is rebuilt inside the image) ---
+app/frontend/node_modules/
+app/frontend/dist/
+**/node_modules/
+
+# --- GCN experiment (not used by the runtime inference module) ---
+app/ml/gcn/
+
+# --- ML training-only / verification files not needed at runtime ---
+app/ml/train.py
+app/ml/verify_inference.py
+app/ml/feature_importance.csv
+
+# --- VCS / editor / OS cruft ---
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Docs & deploy config (not needed at runtime; requirements.txt is copied explicitly) ---
+docs/
+docker-compose.yml
+Dockerfile
+.dockerignore
+README.md
+**/*.md

@@ -1,0 +1,22 @@
+# =============================================================================
+# Local convenience for building/running ChainEye exactly like Hugging Face
+# Spaces would. This is for LOCAL testing only — Spaces builds the Dockerfile
+# directly and does not use this file.
+#
+#   docker compose up --build      # build + run, then open http://localhost:7860
+#   docker compose down
+# =============================================================================
+services:
+  chaineye:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chaineye:latest
+    ports:
+      - "7860:7860"
+    environment:
+      # Default port matches HF Spaces. Override if 7860 is taken locally.
+      PORT: "7860"
+      # Uncomment / set to enable LLM-backed reports (optional, template works without it).
+      # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    restart: unless-stopped

@@ -1,0 +1,30 @@
+# ChainEye (체인아이) backend runtime dependencies — 2026 금융 AI Challenge
+# Pinned to the versions the model artifacts were trained/serialised with
+# (app/ml/chaineye_model.pkl was built with lightgbm 4.7.0 + scikit-learn 1.9.0).
+# Changing these majors can break joblib.load() of the pickle, so keep them pinned.
+#
+# Regenerate a superset with:  pip freeze  (from the project .venv)
+
+# --- Web API ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+
+# --- Data / numerics ---
+numpy==2.4.6
+pandas==3.0.5
+scipy==1.17.1
+pyarrow==25.0.1
+
+# --- Model + explainability ---
+scikit-learn==1.9.0
+lightgbm==4.7.0
+shap==0.51.0
+joblib==1.5.3
+cloudpickle==3.1.2
+
+# --- Graph tracing ---
+networkx==3.6.1
+
+# --- Optional LLM report generation (enabled when ANTHROPIC_API_KEY is set) ---
+anthropic==0.121.0

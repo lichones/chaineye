@@ -1,0 +1,31 @@
+{
+  "model": "GCN (3x GCNConv, hidden=128)",
+  "dataset": "Elliptic Bitcoin",
+  "split": "temporal (train time_step 1..34, test 35..49)",
+  "n_nodes": 203769,
+  "n_undirected_edges": 468710,
+  "n_train_labeled": 29894,
+  "n_test_labeled": 16670,
+  "epochs": 400,
+  "class_weight_illicit": 7.634893125361063,
+  "illicit_precision": 0.5606617647058824,
+  "illicit_recall": 0.5632502308402585,
+  "illicit_f1": 0.5619530170428374,
+  "roc_auc": 0.8920711976698151,
+  "pr_auc": 0.5886710104646351,
+  "confusion_matrix": [
+    [
+      15109,
+      478
+    ],
+    [
+      473,
+      610
+    ]
+  ],
+  "train_seconds": 576.1,
+  "lightgbm_baseline": {
+    "illicit_f1": 0.776,
+    "roc_auc": 0.936
+  }
+}
