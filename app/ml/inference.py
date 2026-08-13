@@ -16,6 +16,12 @@ import joblib
 import numpy as np
 import pandas as pd
 
+# helper works both as a package import (app.ml.inference) and as a script
+try:
+    from . import _feature_store as _fs
+except ImportError:  # run directly as `python app/ml/inference.py`
+    import _feature_store as _fs
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(HERE, "chaineye_model.pkl")
 FEATURE_TABLE_PATH = os.path.join(HERE, "feature_table.parquet")
@@ -27,25 +33,25 @@ MAX_TRACE_NODES = 60
 
 # module globals populated by load()
 _MODEL = None
-_FEATURES = None        # DataFrame indexed by txId (int64), columns = FEATURE_COLS
+_FEAT_MATRIX = None     # read-only float32 memmap, shape (n_rows, 165)
+_ROW_IDX = None         # dict: txId(int) -> row position(int)
 _EDGES = None           # DataFrame with columns txId1, txId2 (int64)
 _ADJ = None             # dict: node -> set(neighbors) (undirected, for tracing)
-_EXPLAINER = None       # shap.TreeExplainer
+_EXPLAINER = None       # shap.TreeExplainer (built lazily on first explanation)
 _EXPECTED_VALUE = 0.0   # SHAP base value for the illicit class
 
 
 def load() -> None:
     """Load model + feature table + graph into module globals. Idempotent."""
-    global _MODEL, _FEATURES, _EDGES, _ADJ, _EXPLAINER, _EXPECTED_VALUE
+    global _MODEL, _FEAT_MATRIX, _ROW_IDX, _EDGES, _ADJ
     if _MODEL is not None:
         return
 
     _MODEL = joblib.load(MODEL_PATH)
 
-    ft = pd.read_parquet(FEATURE_TABLE_PATH)
-    # ensure only the feature columns, indexed by txId, drop time_step if present
-    keep = [c for c in FEATURE_COLS if c in ft.columns]
-    _FEATURES = ft[keep]
+    # memory-mapped float32 feature matrix + txId->row index (near-zero RSS;
+    # avoids the large transient allocation of pd.read_parquet on this file)
+    _FEAT_MATRIX, _ROW_IDX = _fs.load_feature_matrix(FEATURE_TABLE_PATH)
 
     _EDGES = pd.read_parquet(EDGES_PATH)
 
@@ -58,9 +64,20 @@ def load() -> None:
         adj.setdefault(b, set()).add(a)
     _ADJ = adj
 
-    # SHAP explainer for per-prediction explanations
+    # NOTE: the SHAP explainer is built lazily on first explanation
+    # (see _ensure_explainer) so that trace-only workloads never pay for it.
+
+
+def _ensure_explainer() -> None:
+    """Build the SHAP TreeExplainer on first use. Cheap for LightGBM:
+    feature_perturbation='tree_path_dependent' needs no background dataset."""
+    global _EXPLAINER, _EXPECTED_VALUE
+    if _EXPLAINER is not None:
+        return
     import shap
-    _EXPLAINER = shap.TreeExplainer(_MODEL)
+    _EXPLAINER = shap.TreeExplainer(
+        _MODEL, feature_perturbation="tree_path_dependent"
+    )
     ev = _EXPLAINER.expected_value
     if isinstance(ev, (list, np.ndarray)):
         ev = np.ravel(ev)
@@ -78,12 +95,13 @@ def _to_int(tx_id):
 
 def _feature_row(tx_int):
     """Return feature vector (1, N) for a txId, or None if not present."""
-    if tx_int is None or tx_int not in _FEATURES.index:
+    if tx_int is None:
         return None
-    row = _FEATURES.loc[tx_int]
-    if isinstance(row, pd.DataFrame):  # duplicate index guard
-        row = row.iloc[0]
-    return row.to_numpy(dtype=np.float32).reshape(1, -1)
+    i = _ROW_IDX.get(tx_int)
+    if i is None:
+        return None
+    # copy the single row out of the memmap (float32, values identical to source)
+    return np.array(_FEAT_MATRIX[i], dtype=np.float32).reshape(1, -1)
 
 
 @lru_cache(maxsize=100000)
@@ -120,7 +138,8 @@ def score_tx(tx_id: str) -> dict:
     risk = int(round(proba * 100))
     label = "illicit" if proba >= 0.5 else "licit"
 
-    # per-prediction SHAP
+    # per-prediction SHAP (explainer built lazily on first call)
+    _ensure_explainer()
     sv = _EXPLAINER.shap_values(x)
     if isinstance(sv, list):        # binary -> list per class; take illicit
         sv = sv[-1]
