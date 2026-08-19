@@ -15,6 +15,10 @@ data/
 **/node_modules/
 app/frontend/dist/
 
+# --- Runtime-generated ML feature caches (recreated from parquet) ---
+app/ml/feature_table.f32.npy
+app/ml/feature_table.txid.npy
+
 # --- Env & secrets ---
 .env.local
 **/.env.local
