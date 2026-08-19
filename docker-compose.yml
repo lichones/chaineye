@@ -17,6 +17,8 @@ services:
     environment:
       # Default port matches HF Spaces. Override if 7860 is taken locally.
       PORT: "7860"
+      # Synthetic backend data is disabled by default. Keep this off for judging.
+      # CHAINEYE_ALLOW_MOCK_BACKEND: "1"
       # Uncomment / set to enable LLM-backed reports (optional, template works without it).
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
     restart: unless-stopped

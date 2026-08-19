@@ -44,25 +44,39 @@ function renderMarkdown(md) {
   return out
 }
 
-export default function ReportPanel({ report, loading }) {
+const GENERATOR_LABELS = {
+  claude: '생성 AI · Claude',
+  openai: '생성 AI · OpenAI',
+  template: '결정론적 템플릿',
+  suppressed: '판단 거부 · 생성 억제',
+}
+
+export default function ReportPanel({ report, generator, loading }) {
   return (
     <div className="panel report-panel">
       <div className="report-head">
-        <h2 className="panel-title">AI 조사 리포트</h2>
-        {report && (
-          <button
-            className="copy-btn"
-            onClick={() => navigator.clipboard?.writeText(report)}
-            title="리포트 원문 복사"
-          >
-            복사
-          </button>
-        )}
+        <h2 className="panel-title">검토 지원 리포트</h2>
+        <div className="report-actions">
+          {generator && (
+            <span className={`generator-tag ${generator}`}>
+              {GENERATOR_LABELS[generator] || generator}
+            </span>
+          )}
+          {report && (
+            <button
+              className="copy-btn"
+              onClick={() => navigator.clipboard?.writeText(report)}
+              title="리포트 원문 복사"
+            >
+              복사
+            </button>
+          )}
+        </div>
       </div>
       {loading ? (
-        <div className="empty">리포트 생성 중…</div>
+        <div className="empty">검토 리포트 생성 중…</div>
       ) : !report ? (
-        <div className="empty">분석 완료 시 조사 리포트가 생성됩니다.</div>
+        <div className="empty">분석 완료 시 모델 검토 리포트가 생성됩니다.</div>
       ) : (
         <div className="report-body">{renderMarkdown(report)}</div>
       )}

@@ -4,10 +4,10 @@ ChainEye (체인아이) — Bitcoin money-laundering detection backend API.
 
 FastAPI service exposing scoring, graph-trace, explanation and report endpoints.
 
-Model integration is LOOSELY COUPLED: at startup we try to import the teammate's
-ML module (app/ml/inference.py). If it imports and loads, /score and /trace
-delegate to it (MODEL mode). Otherwise we fall back to a built-in MOCK provider
-(MOCK mode) so the API always responds.
+Model integration is LOOSELY COUPLED: at startup we try to import the ML module
+(app/ml/inference.py). If it imports and loads, /score and /trace delegate to it.
+Synthetic fallback is opt-in only (CHAINEYE_ALLOW_MOCK_BACKEND=1); production
+fails closed instead of presenting fabricated data as a live model response.
 
 Run (from app/backend):
     C:\\Users\\DELL\\fsec-ai-challenge-2026\\.venv\\Scripts\\python.exe -m uvicorn main:app --port 8000
@@ -19,9 +19,9 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from typing import List, Literal
+from typing import List, Literal, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -45,7 +45,7 @@ _ML_DIR = os.path.abspath(
 # Runtime state describing which provider is active.
 STATE = {
     "model_loaded": False,   # True only when the real ML module loaded OK
-    "mode": "mock",          # "model" | "mock"
+    "mode": "unavailable",   # "model" | "mock" | "unavailable"
     "inference": None,       # the imported inference module (if any)
 }
 
@@ -72,11 +72,16 @@ def _try_load_model() -> None:
     except Exception as exc:  # noqa: BLE001 - intentional broad fallback
         STATE["inference"] = None
         STATE["model_loaded"] = False
-        STATE["mode"] = "mock"
+        STATE["mode"] = (
+            "mock"
+            if os.environ.get("CHAINEYE_ALLOW_MOCK_BACKEND", "0") == "1"
+            else "unavailable"
+        )
         logger.warning(
-            "ML module unavailable (%s: %s) -> running in MOCK mode.",
+            "ML module unavailable (%s: %s) -> running in %s mode.",
             type(exc).__name__,
             exc,
+            STATE["mode"].upper(),
         )
 
 
@@ -115,6 +120,7 @@ app.add_middleware(
 class HealthResponse(BaseModel):
     status: str = "ok"
     modelLoaded: bool
+    mode: Literal["model", "mock", "unavailable"]
 
 
 class TopFactor(BaseModel):
@@ -128,8 +134,9 @@ class ScoreRequest(BaseModel):
 
 class ScoreResponse(BaseModel):
     txId: str
-    riskScore: int = Field(..., ge=0, le=100)
-    label: Literal["illicit", "licit"]
+    riskScore: Optional[int] = Field(None, ge=0, le=100)
+    decisionThreshold: int = Field(..., ge=0, le=100)
+    label: Literal["illicit", "licit", "unknown"]
     topFactors: List[TopFactor]
 
 
@@ -140,11 +147,12 @@ class TraceRequest(BaseModel):
 
 class GraphNode(BaseModel):
     id: str
-    risk: int = Field(..., ge=0, le=100)
+    risk: Optional[int] = Field(None, ge=0, le=100)
     focus: bool
-    # High-risk (illicit) flag: risk >= 70. Defaults keep backward compatibility
-    # with any provider that hasn't been updated to emit it yet.
-    illicit: bool = False
+    # Model-positive flag based on the validation-selected decision threshold.
+    # Defaults keep backward compatibility with older providers.
+    modelPositive: bool = False
+    scored: bool = True
 
 
 class GraphEdge(BaseModel):
@@ -155,10 +163,10 @@ class GraphEdge(BaseModel):
 class TraceResponse(BaseModel):
     nodes: List[GraphNode]
     edges: List[GraphEdge]
-    # Suspicious directed laundering chains from the focus node to high-risk
-    # nodes. Each path is an ordered list of txId strings. Optional so older
-    # providers still validate.
-    paths: List[List[str]] = Field(default_factory=list)
+    # Directed model-positive review candidates from the focus node. Each path
+    # is an ordered list of txId strings and is not a proven fund-flow path.
+    candidatePaths: List[List[str]] = Field(default_factory=list)
+    decisionThreshold: int = Field(50, ge=0, le=100)
 
 
 class ExplainRequest(BaseModel):
@@ -182,13 +190,17 @@ class GraphStats(BaseModel):
 class ReportRequest(BaseModel):
     txId: str
     score: int = Field(..., ge=0, le=100)
-    label: str
+    decisionThreshold: int = Field(50, ge=0, le=100)
+    # 판단 불가(unknown)에는 보고서를 만들지 않는다. 프론트엔드뿐 아니라
+    # API 계약에서도 생성 억제를 강제해 우회 호출을 막는다.
+    label: Literal["illicit", "licit"]
     topFactors: List[TopFactor] = Field(default_factory=list)
     graphStats: GraphStats = Field(default_factory=GraphStats)
 
 
 class ReportResponse(BaseModel):
     report: str
+    generator: Literal["claude", "openai", "template"]
 
 
 # --------------------------------------------------------------------------- #
@@ -196,13 +208,18 @@ class ReportResponse(BaseModel):
 # --------------------------------------------------------------------------- #
 
 def _provider_score(tx_id: str) -> dict:
-    """Delegate to the real ML module if loaded, else the mock provider."""
+    """Delegate to the model; allow synthetic fallback only when explicit."""
     if STATE["model_loaded"] and STATE["inference"] is not None:
         try:
             return STATE["inference"].score_tx(tx_id)
         except Exception as exc:  # noqa: BLE001
             logger.error("inference.score_tx failed (%s) -> mock fallback.", exc)
-    return mock_provider.score_tx(tx_id)
+    if os.environ.get("CHAINEYE_ALLOW_MOCK_BACKEND", "0") == "1":
+        return mock_provider.score_tx(tx_id)
+    raise HTTPException(
+        status_code=503,
+        detail="Model unavailable; synthetic fallback is disabled.",
+    )
 
 
 def _provider_trace(tx_id: str, hops: int) -> dict:
@@ -211,7 +228,12 @@ def _provider_trace(tx_id: str, hops: int) -> dict:
             return STATE["inference"].trace_tx(tx_id, hops)
         except Exception as exc:  # noqa: BLE001
             logger.error("inference.trace_tx failed (%s) -> mock fallback.", exc)
-    return mock_provider.trace_tx(tx_id, hops)
+    if os.environ.get("CHAINEYE_ALLOW_MOCK_BACKEND", "0") == "1":
+        return mock_provider.trace_tx(tx_id, hops)
+    raise HTTPException(
+        status_code=503,
+        detail="Model unavailable; synthetic fallback is disabled.",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -220,7 +242,9 @@ def _provider_trace(tx_id: str, hops: int) -> dict:
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", modelLoaded=STATE["model_loaded"])
+    allow_mock = os.environ.get("CHAINEYE_ALLOW_MOCK_BACKEND", "0") == "1"
+    mode = "model" if STATE["model_loaded"] else ("mock" if allow_mock else "unavailable")
+    return HealthResponse(status="ok", modelLoaded=STATE["model_loaded"], mode=mode)
 
 
 @app.post("/score", response_model=ScoreResponse)
@@ -263,27 +287,31 @@ def report(req: ReportRequest) -> ReportResponse:
     if provider == "openai":
         text = openai_report.generate_report_llm(
             tx_id=req.txId, score=req.score, label=req.label,
+            decision_threshold=req.decisionThreshold,
             top_factors=top_factors, graph_stats=graph_stats,
         )
-        used = "OpenAI"
+        used = "openai"
     elif provider == "auto":
         text = claude_report.generate_report_llm(
             tx_id=req.txId, score=req.score, label=req.label,
+            decision_threshold=req.decisionThreshold,
             top_factors=top_factors, graph_stats=graph_stats,
         )
-        used = "Claude"
+        used = "claude"
         if text is None:
             text = openai_report.generate_report_llm(
                 tx_id=req.txId, score=req.score, label=req.label,
+                decision_threshold=req.decisionThreshold,
                 top_factors=top_factors, graph_stats=graph_stats,
             )
-            used = "OpenAI"
+            used = "openai"
     else:  # "claude" 및 알 수 없는 값은 Claude 로 처리
         text = claude_report.generate_report_llm(
             tx_id=req.txId, score=req.score, label=req.label,
+            decision_threshold=req.decisionThreshold,
             top_factors=top_factors, graph_stats=graph_stats,
         )
-        used = "Claude"
+        used = "claude"
 
     if text is not None:
         logger.info("/report served via LLM (%s).", used)
@@ -294,11 +322,13 @@ def report(req: ReportRequest) -> ReportResponse:
             tx_id=req.txId,
             score=req.score,
             label=req.label,
+            decision_threshold=req.decisionThreshold,
             top_factors=top_factors,
             graph_stats=graph_stats,
         )
+        used = "template"
 
-    return ReportResponse(report=text)
+    return ReportResponse(report=text, generator=used)
 
 
 # --------------------------------------------------------------------------- #

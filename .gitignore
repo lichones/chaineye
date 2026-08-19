@@ -11,6 +11,10 @@ venv/
 # --- Raw Elliptic dataset (665MB) — NOT needed at runtime (model artifacts are in app/ml) ---
 data/
 
+# --- Derived inference caches (rebuilt from feature_table.parquet on demand) ---
+app/ml/feature_table.f32.npy
+app/ml/feature_table.txid.npy
+
 # --- Node / frontend build ---
 **/node_modules/
 app/frontend/dist/
@@ -29,3 +33,8 @@ Thumbs.db
 
 # --- Docker verify images / logs ---
 *.log
+
+# --- Local authoring and QA scratch files ---
+build/
+tmp/
+tools/

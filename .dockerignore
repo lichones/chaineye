@@ -20,6 +20,8 @@ venv/
 app/frontend/node_modules/
 app/frontend/dist/
 **/node_modules/
+build/
+tools/
 
 # --- GCN experiment (not used by the runtime inference module) ---
 app/ml/gcn/
@@ -28,6 +30,8 @@ app/ml/gcn/
 app/ml/train.py
 app/ml/verify_inference.py
 app/ml/feature_importance.csv
+app/ml/feature_table.f32.npy
+app/ml/feature_table.txid.npy
 
 # --- VCS / editor / OS cruft ---
 .git/

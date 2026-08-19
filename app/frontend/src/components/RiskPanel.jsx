@@ -2,8 +2,8 @@ import React from 'react'
 import { riskLevel } from '../riskUtils'
 
 // 원형 게이지 (순수 SVG, 외부 라이브러리 불필요)
-function Gauge({ score }) {
-  const level = riskLevel(score)
+function Gauge({ score, label, decisionThreshold }) {
+  const level = riskLevel(score, label, decisionThreshold)
   const size = 190
   const stroke = 16
   const r = (size - stroke) / 2
@@ -49,30 +49,60 @@ export default function RiskPanel({ result }) {
   if (!result) {
     return (
       <div className="panel risk-panel">
-        <h2 className="panel-title">위험도 평가</h2>
-        <div className="empty">트랜잭션을 분석하면 위험 점수가 표시됩니다.</div>
+        <h2 className="panel-title">모델 검토 점수</h2>
+        <div className="empty">트랜잭션을 분석하면 모델 점수가 표시됩니다.</div>
       </div>
     )
   }
 
-  const { riskScore, label, topFactors } = result
-  const level = riskLevel(riskScore)
+  const { riskScore, decisionThreshold = 50, label, topFactors } = result
+
+  if (label === 'unknown' || riskScore == null) {
+    return (
+      <div className="panel risk-panel">
+        <h2 className="panel-title">모델 검토 점수</h2>
+        <div className="unknown-result" role="status">
+          <div className="unknown-result-title">평가 불가</div>
+          <p>
+            이 거래 ID는 현재 모델의 데이터 범위에 없어 모델 점수를 산출하지
+            않았습니다.
+          </p>
+          <p>
+            데이터 부재는 정상 거래의 근거가 아닙니다. 온체인 데이터 수집 또는
+            별도 분석이 필요합니다.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const level = riskLevel(riskScore, label, decisionThreshold)
 
   return (
     <div className="panel risk-panel">
-      <h2 className="panel-title">위험도 평가</h2>
+      <h2 className="panel-title">모델 검토 점수</h2>
 
-      <Gauge score={riskScore} />
+      <Gauge
+        score={riskScore}
+        label={label}
+        decisionThreshold={decisionThreshold}
+      />
+
+      <div className="decision-threshold">
+        검토 임계값: {decisionThreshold}점
+      </div>
 
       <div className="risk-badge" style={{ background: level.color }}>
         {level.label}
         <span className="risk-badge-sub">
-          {label === 'illicit' ? '불법 자금 의심' : '정상 거래 추정'}
+          {label === 'illicit'
+            ? '모델 양성 · 불법 확정 아님'
+            : '모델 음성 · 정상 확정 아님'}
         </span>
       </div>
 
       <div className="factors">
-        <div className="factors-title">핵심 위험 근거</div>
+        <div className="factors-title">모델 기여도 (SHAP)</div>
         <ul className="factors-list">
           {topFactors.map((f, i) => {
             const positive = f.impact >= 0

@@ -24,9 +24,18 @@ export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? 'false') === 'true'
 // 트레이스(자금 흐름 그래프) 조회 시 탐색할 홉(hop) 수
 export const DEFAULT_HOPS = 2
 
-// 입력창에 노출할 예시 트랜잭션 ID (클릭 시 자동 입력)
+// 입력창에 노출할 예시 트랜잭션 ID (클릭 시 즉시 분석)
 export const EXAMPLE_TXIDS = [
-  '3a1b9f4c7e2d8a6b5c0f1e2d3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b',
-  'e4d909c290d0fb1ca068ffaddf22cbd0c1b2a3948576e5d4c3b2a1908f7e6d5c',
-  '9c1185a5c5e9fc54612808977ee8f548b2258d31ffffffff0000abcdef123456',
+  {
+    txId: '70424581',
+    label: '검토 후보', // 양성 2/6개와 후보 경로 1개가 보이는 공개 Elliptic 테스트 거래
+  },
+  {
+    txId: '114498409',
+    label: '낮은 위험', // 6개 노드 모두 임계값 미만인 licit 테스트 거래
+  },
+  {
+    txId: '999999999999',
+    label: '미평가', // 데이터 범위 밖: unknown/abstain 동작 확인
+  },
 ]

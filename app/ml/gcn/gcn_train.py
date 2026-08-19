@@ -240,7 +240,11 @@ def main():
         "pr_auc": pr_auc,
         "confusion_matrix": cm.tolist(),
         "train_seconds": round(train_secs, 1),
-        "lightgbm_baseline": {"illicit_f1": 0.776, "roc_auc": 0.936},
+        "comparison_status": "not_comparable",
+        "comparison_note": (
+            "Exploratory GCN run with no validation split; do not compare it "
+            "with the independently evaluated LightGBM service model."
+        ),
     }
     METRICS_JSON.write_text(json.dumps(metrics, indent=2))
     print(f"\n[save] metrics -> {METRICS_JSON}")

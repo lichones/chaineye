@@ -1,9 +1,9 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import InputBar from './components/InputBar'
 import RiskPanel from './components/RiskPanel'
 import GraphPanel from './components/GraphPanel'
 import ReportPanel from './components/ReportPanel'
-import { fetchScore, fetchTrace, fetchReport } from './api'
+import { fetchScore, fetchTrace, fetchReport, fetchHealth } from './api'
 import { USE_MOCK, DEFAULT_HOPS } from './config'
 import { isHighRisk } from './riskUtils'
 
@@ -12,17 +12,38 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [reportLoading, setReportLoading] = useState(false)
   const [error, setError] = useState('')
+  const [providerMode, setProviderMode] = useState(
+    USE_MOCK ? 'mock' : 'checking',
+  )
 
   const [score, setScore] = useState(null) // /score 응답
   const [trace, setTrace] = useState(null) // /trace 응답
   const [report, setReport] = useState('') // /report 응답 텍스트
+  const [reportGenerator, setReportGenerator] = useState('')
 
-  const analyze = useCallback(async () => {
-    const id = txId.trim()
+  useEffect(() => {
+    let active = true
+    fetchHealth()
+      .then((health) => {
+        if (active) setProviderMode(health.mode || 'unavailable')
+      })
+      .catch(() => {
+        if (active) setProviderMode('unavailable')
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const analyze = useCallback(async (requestedTxId) => {
+    // 버튼 클릭 시에는 MouseEvent가 전달되고, 예시 클릭 시에는 txId 문자열이 전달된다.
+    // 예시 값은 setState 반영을 기다리지 않고 즉시 분석에 사용한다.
+    const id = (typeof requestedTxId === 'string' ? requestedTxId : txId).trim()
     if (!id) return
     setLoading(true)
     setError('')
     setReport('')
+    setReportGenerator('')
     setReportLoading(true)
     try {
       // 1) 위험 점수 + 2) 자금 흐름 그래프를 병렬 호출
@@ -33,21 +54,40 @@ export default function App() {
       setScore(scoreRes)
       setTrace(traceRes)
 
+      if (scoreRes.label === 'unknown' || scoreRes.riskScore == null) {
+        setReport(`# 분석 보류
+
+대상 트랜잭션은 현재 모델의 데이터 범위에 없어 점수를 산출하지 않았습니다.
+
+- **정상 거래로 판정한 것이 아닙니다.**
+- 온체인 피처 수집 또는 별도 조사 후 다시 평가해야 합니다.
+- 자동 보고서와 STR 권고는 근거가 확보될 때까지 생성하지 않습니다.`)
+        setReportGenerator('suppressed')
+        setReportLoading(false)
+        return
+      }
+
       // 3) 그래프 통계 계산 후 리포트 요청
       const graphStats = {
         nodeCount: traceRes.nodes.length,
         edgeCount: traceRes.edges.length,
-        highRiskCount: traceRes.nodes.filter((n) => isHighRisk(n.risk)).length,
+        highRiskCount: traceRes.nodes.filter((n) =>
+          n.modelPositive != null
+            ? n.modelPositive
+            : isHighRisk(n.risk, scoreRes.decisionThreshold),
+        ).length,
         hops: DEFAULT_HOPS,
       }
       const reportRes = await fetchReport(
         id,
         scoreRes.riskScore,
         scoreRes.label,
+        scoreRes.decisionThreshold,
         scoreRes.topFactors,
         graphStats,
       )
       setReport(reportRes.report)
+      setReportGenerator(reportRes.generator || 'template')
     } catch (e) {
       setError(e.message || '분석 중 오류가 발생했습니다.')
       setScore(null)
@@ -67,11 +107,17 @@ export default function App() {
             <div className="brand-name">
               ChainEye <span className="brand-ko">체인아이</span>
             </div>
-            <div className="brand-sub">가상자산 자금세탁 탐지 · 추적 시스템</div>
+            <div className="brand-sub">가상자산 AML 모델 검증 · 판단지원 시스템</div>
           </div>
         </div>
-        <div className={`mode-tag ${USE_MOCK ? 'mock' : 'live'}`}>
-          {USE_MOCK ? 'MOCK 데모 모드' : 'LIVE API'}
+        <div className={`mode-tag ${providerMode}`}>
+          {providerMode === 'model'
+            ? 'MODEL API'
+            : providerMode === 'mock'
+              ? 'MOCK 데모 모드'
+              : providerMode === 'checking'
+                ? 'MODEL 확인 중'
+                : 'MODEL 사용 불가'}
         </div>
       </header>
 
@@ -79,6 +125,10 @@ export default function App() {
         value={txId}
         onChange={setTxId}
         onAnalyze={analyze}
+        onSelectExample={(exampleTxId) => {
+          setTxId(exampleTxId)
+          analyze(exampleTxId)
+        }}
         loading={loading}
       />
 
@@ -92,7 +142,11 @@ export default function App() {
           <GraphPanel trace={trace} />
         </div>
         <div className="col-right">
-          <ReportPanel report={report} loading={reportLoading} />
+          <ReportPanel
+            report={report}
+            generator={reportGenerator}
+            loading={reportLoading}
+          />
         </div>
       </main>
 

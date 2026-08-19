@@ -30,6 +30,22 @@ async function postJson(path, body) {
   return res.json()
 }
 
+async function getJson(path) {
+  const res = await fetch(buildUrl(path))
+  if (!res.ok) {
+    throw new Error(`API ${path} 오류: ${res.status} ${res.statusText}`)
+  }
+  return res.json()
+}
+
+// GET /health — 서버가 확인한 provider mode를 화면의 기준으로 사용한다.
+export async function fetchHealth() {
+  if (USE_MOCK) {
+    return { status: 'ok', modelLoaded: false, mode: 'mock' }
+  }
+  return getJson('/health')
+}
+
 // POST /score
 export async function fetchScore(txId) {
   if (USE_MOCK) {
@@ -50,10 +66,24 @@ export async function fetchTrace(txId, hops = DEFAULT_HOPS) {
 
 // POST /report
 // 백엔드 ReportRequest 는 label(필수)을 요구하므로 반드시 함께 전송한다.
-export async function fetchReport(txId, score, label, topFactors, graphStats) {
+export async function fetchReport(
+  txId,
+  score,
+  label,
+  decisionThreshold,
+  topFactors,
+  graphStats,
+) {
   if (USE_MOCK) {
     await delay(400)
-    return mockReport(txId, score, topFactors, graphStats)
+    return mockReport(txId, score, label, decisionThreshold, topFactors, graphStats)
   }
-  return postJson('/report', { txId, score, label, topFactors, graphStats })
+  return postJson('/report', {
+    txId,
+    score,
+    label,
+    decisionThreshold,
+    topFactors,
+    graphStats,
+  })
 }

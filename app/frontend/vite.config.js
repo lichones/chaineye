@@ -11,9 +11,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          cytoscape: ['cytoscape', 'react-cytoscapejs'],
-          react: ['react', 'react-dom'],
+        manualChunks(id) {
+          if (id.includes('cytoscape') || id.includes('react-cytoscapejs')) {
+            return 'cytoscape'
+          }
+          if (id.includes('/react/') || id.includes('/react-dom/')) {
+            return 'react'
+          }
         },
       },
     },

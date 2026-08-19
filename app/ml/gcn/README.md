@@ -16,9 +16,9 @@ that produces a trained model, metrics, and this narrative.
 graph      : 203,769 nodes (all transactions), 468,710 undirected edges
 features   : the 165 Elliptic node features (standardized on train-mask stats)
 labels     : illicit=1, licit=0, unknown=masked out of the loss
-split       : TEMPORAL — train = labeled nodes with time_step 1..34
-                          test  = labeled nodes with time_step 35..49
-                          (identical protocol to the LightGBM baseline)
+split       : EXPLORATORY TEMPORAL — train = labeled nodes with time_step 1..34
+                                      test  = labeled nodes with time_step 35..49
+                                      no validation split
 architecture: 3 × GCNConv (165 → 128 → 128 → 2), ReLU, dropout 0.3
 loss        : class-weighted cross-entropy (illicit weight ≈ 7.63, inverse-frequency)
 training    : 400 epochs, Adam (lr 0.01, wd 5e-4), full-batch on CPU (~10 min)
@@ -34,7 +34,6 @@ C:/Users/DELL/fsec-ai-challenge-2026/.venv/Scripts/python.exe app/ml/gcn/gcn_tra
 
 | Model                 | Illicit Precision | Illicit Recall | Illicit F1 | ROC-AUC |
 |-----------------------|:-----------------:|:--------------:|:----------:|:-------:|
-| LightGBM (baseline)   |        —          |       —        | **0.776**  | **0.936** |
 | **GCN (this model)**  |      0.561        |     0.563      | **0.562**  | **0.892** |
 
 Test set: 16,670 labeled nodes (1,083 illicit / 15,587 licit).
@@ -47,22 +46,13 @@ Confusion matrix (rows = true [licit, illicit], cols = predicted):
 
 Full metrics in [`gcn_metrics.json`](gcn_metrics.json).
 
-## Comparison to LightGBM
+## Evaluation status
 
-On the same temporal split, the GCN reaches **illicit-F1 0.562 and ROC-AUC 0.892**,
-below the LightGBM baseline's **0.776 / 0.936**. This gap is the well-documented pattern
-on Elliptic: because the 165 hand-engineered features are already highly discriminative,
-gradient-boosted trees exploit them directly, whereas a plain GCN smooths each node's
-signal against its neighbourhood — which helps recall on structurally-embedded illicit
-clusters but dilutes the sharp per-node cues and hurts precision, especially on the later
-time steps where illicit actors adopt new patterns (temporal distribution shift hits the
-graph model harder). The value of the GCN in the ChainEye narrative is **complementary,
-not competitive**: it encodes *relational* risk — a transaction looking suspicious because
-of the company it keeps — which is exactly the money-laundering typology (layering, peel
-chains, mixer fan-out) that a per-transaction tree model is blind to. The strong ROC-AUC
-(0.892) confirms the graph carries real signal; the natural next step for the competition
-would be to **ensemble** the GCN's structural score with the LightGBM baseline, or upgrade
-to a GraphSAGE/GAT with skip-connections, rather than replacing the tree model.
+This GCN run is an exploratory artifact, not a baseline comparison. It has no validation
+split, logs test metrics during training, and uses full-graph message passing. Its numbers
+must therefore not be compared with the independently evaluated LightGBM service model or
+presented as an ensemble improvement. A comparable run requires train/validation/final-test
+separation, validation-only stopping, and a single final-test evaluation.
 
 ## Files
 

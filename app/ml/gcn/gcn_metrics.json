@@ -24,8 +24,6 @@
     ]
   ],
   "train_seconds": 576.1,
-  "lightgbm_baseline": {
-    "illicit_f1": 0.776,
-    "roc_auc": 0.936
-  }
+  "comparison_status": "not_comparable",
+  "comparison_note": "Exploratory GCN run with no validation split. The historical LightGBM 0.776/0.936 values used the final test window for model selection and are intentionally excluded."
 }

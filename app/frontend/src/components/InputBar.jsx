@@ -2,7 +2,13 @@ import React from 'react'
 import { EXAMPLE_TXIDS } from '../config'
 
 // 상단 입력바: txId 입력 + 분석 버튼 + 예시 칩
-export default function InputBar({ value, onChange, onAnalyze, loading }) {
+export default function InputBar({
+  value,
+  onChange,
+  onAnalyze,
+  onSelectExample,
+  loading,
+}) {
   const handleKey = (e) => {
     if (e.key === 'Enter' && !loading) onAnalyze()
   }
@@ -29,15 +35,16 @@ export default function InputBar({ value, onChange, onAnalyze, loading }) {
       </div>
       <div className="chips">
         <span className="chips-label">예시:</span>
-        {EXAMPLE_TXIDS.map((tx) => (
+        {EXAMPLE_TXIDS.map(({ txId, label }) => (
           <button
-            key={tx}
+            key={txId}
             className="chip"
-            title={tx}
-            onClick={() => onChange(tx)}
+            title={`${label}: ${txId}`}
+            onClick={() => onSelectExample(txId)}
             disabled={loading}
           >
-            {tx.slice(0, 10)}…{tx.slice(-6)}
+            <strong>{label}</strong>
+            <span>{txId}</span>
           </button>
         ))}
       </div>
