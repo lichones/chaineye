@@ -150,9 +150,6 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="app-footer">
-        2026 금융 AI Challenge · ChainEye 프로토타입 — 방어적 분석 데모용
-      </footer>
     </div>
   )
 }
