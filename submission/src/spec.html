@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>2026 금융 AI Challenge 기능명세서 - ChainEye</title>
+<style>
+@page { size:A4; margin:0; }
+*{box-sizing:border-box} body{margin:0;background:#e5e7eb;color:#172033;font-family:"Malgun Gothic","Noto Sans KR",sans-serif}
+.sheet{width:210mm;height:297mm;margin:0 auto 8mm;padding:14mm 15mm 13mm;background:#fff;position:relative;page-break-after:always;overflow:hidden}.sheet:last-child{page-break-after:auto}
+.kicker{color:#136f63;font-size:10pt;font-weight:800;letter-spacing:.08em}h1{margin:8mm 0 3mm;font-size:25pt;line-height:1.2;color:#0f2d3d;letter-spacing:-.04em}.subtitle{font-size:13pt;line-height:1.55;color:#405465}
+h2{margin:0 0 4mm;padding-bottom:2.2mm;border-bottom:1.2px solid #9fb5bd;color:#0f4f55;font-size:16pt}h3{margin:4.5mm 0 2mm;color:#143d4a;font-size:12pt}p{margin:0 0 3mm;font-size:9.8pt;line-height:1.55;word-break:keep-all}ul,ol{margin:1mm 0 3mm 5mm;padding-left:4mm}li{margin:1.3mm 0;font-size:9.6pt;line-height:1.45}
+.meta{margin-top:14mm;width:100%;border-collapse:collapse;font-size:10pt}.meta th,.meta td{border-top:1px solid #d7e0e4;padding:3mm 2mm;text-align:left}.meta th{width:30mm;color:#52636f}
+table.data{width:100%;border-collapse:collapse;margin:3mm 0 4mm;table-layout:fixed}.data th{background:#e8f1f2;color:#153f47;text-align:left;font-size:8.9pt;padding:2.3mm;border-bottom:1px solid #9fb5bd}.data td{font-size:8.7pt;line-height:1.42;padding:2.3mm;border-bottom:1px solid #dfe6e9;vertical-align:top}
+.status{display:inline-block;padding:1mm 2.2mm;border-radius:10mm;background:#ddf5ee;color:#0b695b;font-size:8pt;font-weight:800}.callout{padding:4mm 5mm;margin:4mm 0;border:1px solid #edc676;background:#fff9e8;color:#5d4814;font-size:9.4pt;line-height:1.5}.api{font-family:Consolas,monospace;background:#f3f5f7;border:1px solid #d9e0e4;padding:3mm;font-size:8.6pt;line-height:1.45;white-space:pre-wrap}.flow{display:flex;gap:2mm;margin:4mm 0}.step{flex:1;padding:3.2mm 2.5mm;border:1px solid #ccd9dd;background:#f8fafb;min-height:28mm;font-size:8.8pt;line-height:1.4}.step b{display:block;color:#0f5d61;margin-bottom:1.4mm}.arrow{align-self:center;color:#20a38d;font-weight:900}.pass{color:#0b6b56;font-weight:800}.fail{color:#9b2c2c;font-weight:800}.footer{position:absolute;left:15mm;right:15mm;bottom:7mm;display:flex;justify-content:space-between;font-size:8pt;color:#7a8993;border-top:1px solid #dfe6e9;padding-top:2mm}.small{font-size:8.4pt;color:#667782}
+</style>
+</head>
+<body>
+<section class="sheet">
+  <div class="kicker">첨부 2 · 2026 금융 AI Challenge 기능 명세서</div>
+  <h1>ChainEye 체인아이</h1>
+  <div class="subtitle">가상자산 AML 모델 검증·판단지원 MVP</div>
+  <table class="meta">
+    <tr><th>팀명 *</th><td>KNPA-NSIB</td></tr>
+    <tr><th>구성원 성명 *</th><td>ssophiz</td></tr>
+    <tr><th>배포 URL *</th><td>https://chaineye.onrender.com</td></tr>
+    <tr><th>권장 환경</th><td>Chrome·Edge 최신 버전, 데스크톱 1280px 이상, 계정 불필요</td></tr>
+  </table>
+  <h2 style="margin-top:10mm">1. MVP 구현 범위 *</h2>
+  <p>제출 저장소에서 실제 동작하는 기능만 기재했다. 입력은 Elliptic 데이터셋의 거래 ID이며, 실시간 지갑 주소·64자리 온체인 txid 위험도 조회는 구현 범위가 아니다.</p>
+  <table class="data">
+    <tr><th style="width:37mm">구현 영역</th><th>범위</th><th style="width:28mm">상태</th></tr>
+    <tr><td>모델 추론</td><td>LightGBM 점수, 원시 확률 기반 임계값 판정, 상위 SHAP 기여도</td><td><span class="status">구현 완료</span></td></tr>
+    <tr><td>그래프 조회</td><td>최대 2홉 방향성 거래 인접 그래프와 검토 후보 경로(최대 8개)</td><td><span class="status">구현 완료</span></td></tr>
+    <tr><td>판단 거부</td><td>데이터 범위 밖 입력에 unknown 반환, 점수·보고서·STR 권고 억제</td><td><span class="status">구현 완료</span></td></tr>
+    <tr><td>검토 리포트</td><td>근거 제한 템플릿, 선택형 Claude/OpenAI 경로, 실제 생성 경로 배지</td><td><span class="status">구현 완료</span></td></tr>
+    <tr><td>운영 안전</td><td>모델 장애 시 503 fail-closed, 합성 목업은 명시적 환경변수에서만 허용</td><td><span class="status">구현 완료</span></td></tr>
+  </table>
+  <div class="callout"><b>제외:</b> 실시간 주소 엔터티 귀속, 제재목록 매칭, 주소 클러스터링, 거래소 KYC 연동, 멀티체인 조회, GCN 라이브 앙상블.</div>
+  <div class="footer"><span>구현 범위</span><span>1 / 5</span></div>
+</section>
+
+<section class="sheet">
+  <h2>2. 주요 기능 목록 *</h2>
+  <table class="data">
+    <tr><th style="width:28mm">기능명</th><th style="width:60mm">기능 설명</th><th style="width:38mm">관련 화면/API</th><th>검증 포인트</th></tr>
+    <tr><td>실행 모드 확인</td><td>서버가 model/mock/unavailable 중 실제 모드를 반환하고 화면 상단에 표시</td><td>상단 배지<br>GET /health</td><td>MODEL API인지 확인</td></tr>
+    <tr><td>거래 점수</td><td>모델 확률을 0~100 표시값으로 변환하고 검증 임계값과 모델 양성·음성을 표시</td><td>모델 검토 점수<br>POST /score</td><td>표시값 반올림은 판정에 사용하지 않음</td></tr>
+    <tr><td>SHAP 설명</td><td>출력에 가장 크게 기여한 익명 피처와 방향을 최대 6개 제시</td><td>모델 기여도<br>POST /explain</td><td>거래 증거가 아닌 모델 설명</td></tr>
+    <tr><td>거래 인접 그래프</td><td>원본 Elliptic 엣지를 방향성 그래프로 표시하고 후보 인접 경로를 강조</td><td>거래 인접 그래프<br>POST /trace</td><td>소유권·범죄 연결을 단정하지 않음</td></tr>
+    <tr><td>검토 리포트</td><td>모델 출력·기여도·그래프 관찰·담당자 결정을 분리한 한국어 리포트 생성</td><td>검토 지원 리포트<br>POST /report</td><td>generator 배지로 실제 경로 확인</td></tr>
+    <tr><td>판단 거부</td><td>미등록 ID는 riskScore=null, label=unknown을 반환하고 생성 호출을 중단</td><td>평가 불가 화면<br>/score, /report</td><td>/report 우회 요청도 422</td></tr>
+    <tr><td>장애 실패 폐쇄</td><td>모델 로드·추론 실패 시 정상처럼 보이는 합성 결과를 반환하지 않음</td><td>API 오류 표시</td><td>POST /score 503</td></tr>
+  </table>
+  <h3>화면 표시 원칙</h3>
+  <ul>
+    <li>모델 양성은 “불법 확정 아님”, 모델 음성은 “정상 확정 아님”을 함께 표시한다.</li>
+    <li>리포트 배지는 생성 AI provider, 결정론적 템플릿, 생성 억제를 구분한다.</li>
+    <li>평가 불가일 때 기존 그래프의 초점 노드만 미평가 상태로 표시하고 자동 권고를 만들지 않는다.</li>
+  </ul>
+  <div class="footer"><span>기능 목록</span><span>2 / 5</span></div>
+</section>
+
+<section class="sheet">
+  <h2>3. 사용자 이용 흐름 *</h2>
+  <div class="flow">
+    <div class="step"><b>1. URL 접속</b>계정 없이 접속하고 상단의 MODEL API 배지를 확인한다.</div><div class="arrow">›</div>
+    <div class="step"><b>2. 예시 선택</b>검토 후보, 낮은 우선순위, 미평가 중 하나를 클릭한다.</div><div class="arrow">›</div>
+    <div class="step"><b>3. 병렬 분석</b>/score와 /trace를 호출해 모델 출력과 그래프를 표시한다.</div><div class="arrow">›</div>
+    <div class="step"><b>4. 출력 통제</b>유효 입력만 /report를 호출하고 미평가는 생성 억제한다.</div>
+  </div>
+  <h3>흐름 A - 검토 후보</h3>
+  <ol>
+    <li>예시 <code>70424581</code>을 클릭한다.</li>
+    <li>모델 점수 29점, 검토 임계값 23점, “우선 검토 / 모델 양성·불법 확정 아님”을 확인한다.</li>
+    <li>SHAP 피처와 2홉 방향성 인접 그래프, 검토 후보 인접 경로를 확인한다.</li>
+    <li>리포트의 “불법 거래나 자금세탁을 확정하는 결과는 아님” 문구와 생성 경로 배지를 확인한다.</li>
+  </ol>
+  <h3>흐름 B - 데이터 범위 밖 입력</h3>
+  <ol>
+    <li>예시 <code>999999999999</code>를 클릭한다.</li>
+    <li>점수 대신 “평가 불가”와 데이터 부재가 정상 근거가 아니라는 설명을 확인한다.</li>
+    <li>리포트 영역에서 “판단 거부·생성 억제” 배지와 STR 권고 미생성을 확인한다.</li>
+  </ol>
+  <h3>흐름 C - 낮은 우선순위</h3>
+  <ol>
+    <li>예시 <code>114498409</code>를 클릭한다.</li>
+    <li>모델 음성은 정상 확정이 아니라는 문구와 기존 업무 규칙 적용 권고를 확인한다.</li>
+  </ol>
+  <div class="callout">심사자는 직접 거래 ID를 입력할 수도 있다. Elliptic 데이터에 없는 값은 임의 점수로 보간하지 않고 평가 불가로 처리한다.</div>
+  <div class="footer"><span>사용자 흐름</span><span>3 / 5</span></div>
+</section>
+
+<section class="sheet">
+  <h2>4. AI 및 데이터 처리 방식 *</h2>
+  <h3>처리 파이프라인</h3>
+  <div class="api">입력 txId
+  → feature_table.parquet 범위 확인
+  → LightGBM predict_proba
+  → 원시 확률 ≥ 0.225676이면 모델 양성
+  → SHAP TreeExplainer 상위 기여도
+  → edges.parquet 방향성 2홉 그래프
+  → 유효 입력만 근거 제한 리포트 생성</div>
+  <table class="data">
+    <tr><th style="width:35mm">구성요소</th><th>입력</th><th>출력</th><th style="width:40mm">안전 통제</th></tr>
+    <tr><td>LightGBM</td><td>익명 피처 165개</td><td>불법 클래스 확률, 양성/음성</td><td>시간 분할 검증·원시 확률 판정</td></tr>
+    <tr><td>SHAP</td><td>동일 피처 벡터</td><td>상위 피처·기여 방향</td><td>설명과 증거를 분리</td></tr>
+    <tr><td>그래프</td><td>거래 ID, 홉 수</td><td>노드·엣지·후보 인접 경로</td><td>원본 방향성 엣지만 사용</td></tr>
+    <tr><td>리포트</td><td>점수·임계값·라벨·기여도·통계</td><td>한국어 검토 지원 문장</td><td>입력 외 사실 생성 금지·출처 배지</td></tr>
+  </table>
+  <h3>데이터 보호</h3>
+  <ul>
+    <li>공개 Elliptic 벤치마크만 사용하며 개인정보·실제 고객정보·실제 지갑 주소를 저장하지 않는다.</li>
+    <li>CTI-Vault의 제한 정보나 비공개 주소는 공개 서비스에 포함하지 않으며 퍼블릭 익스플로러로 자동 조회하지 않는다.</li>
+    <li>외부 생성형 AI를 활성화할 경우 입력 데이터가 provider로 전송된다는 사실을 운영 고지하고 Secret은 서버 환경변수로만 관리한다.</li>
+  </ul>
+  <h3>성능과 한계</h3>
+  <p>독립 시간 테스트의 불법 클래스 Precision 0.698, Recall 0.723, F1 0.711, PR-AUC 0.674, ROC-AUC 0.899다. 익명 피처는 실제 기관 피처로 바로 설명할 수 없으며, GCN 과거 실험은 비교 가능한 검증이 없어 라이브 추론과 성능 주장에 사용하지 않는다.</p>
+  <div class="footer"><span>AI·데이터 처리</span><span>4 / 5</span></div>
+</section>
+
+<section class="sheet">
+  <h2>5. MVP 검증 방법 *</h2>
+  <h3>심사자 검증 절차</h3>
+  <table class="data">
+    <tr><th style="width:12mm">#</th><th style="width:38mm">입력·조작</th><th>예상 결과</th><th style="width:26mm">판정</th></tr>
+    <tr><td>1</td><td>URL 접속</td><td>상단 MODEL API 배지, 입력창, 예시 3개가 보임</td><td class="pass">통과</td></tr>
+    <tr><td>2</td><td>70424581</td><td>29점, 임계값 23점, 우선 검토, 후보 경로, 템플릿 또는 provider 배지</td><td class="pass">통과</td></tr>
+    <tr><td>3</td><td>114498409</td><td>임계값 미만, 모델 음성·정상 확정 아님, 낮은 우선순위 보고서</td><td class="pass">통과</td></tr>
+    <tr><td>4</td><td>999999999999</td><td>평가 불가, riskScore 없음, 판단 거부·생성 억제</td><td class="pass">통과</td></tr>
+    <tr><td>5</td><td>unknown으로 /report 직접 호출</td><td>HTTP 422, 보고서 미생성</td><td class="pass">자동검증</td></tr>
+    <tr><td>6</td><td>모델 상태 강제 해제</td><td>HTTP 503, 합성 결과 미반환</td><td class="pass">자동검증</td></tr>
+  </table>
+  <h3>자동 검증 명령</h3>
+  <div class="api">python app/ml/verify_inference.py
+python app/backend/verify_api.py
+cd app/frontend &amp;&amp; npm run build</div>
+  <p>검증 결과: 추론 assertion 통과, API 계약 200/422/503 통과, Vite production build 통과, Chrome 실제 화면 양성·미평가 흐름 통과, 콘솔 오류 0건.</p>
+  <h3>실행 환경과 제한사항</h3>
+  <ul>
+    <li>무료 Render 인스턴스는 절전 후 첫 접속이 지연될 수 있으므로 제출 URL 가용 시간에는 사전 웜업 또는 상시 실행 환경이 필요하다.</li>
+    <li>실제 주소 조회가 아니라 Elliptic 정수 거래 ID만 지원한다.</li>
+    <li>SHAP 피처명이 익명이라 실무 의미 해석에는 기관 자체 피처 사전이 필요하다.</li>
+    <li>공개 데모가 템플릿 경로이면 생성형 AI 실행으로 주장하지 않는다.</li>
+  </ul>
+  <div class="callout"><b>제출 전 필수 배포 게이트:</b> 현재 로컬 수정본과 Render 배포본의 모델·API 응답을 동일 커밋으로 맞춘 뒤, 2026-09-07 11:00부터 09-11 23:59까지 URL 가용성을 모니터링한다.</div>
+  <p class="small">작성 기준: 2026-08-19 · 저장소 계약 테스트 및 브라우저 검증 결과</p>
+  <div class="footer"><span>검증 절차·제한</span><span>5 / 5</span></div>
+</section>
+</body>
+</html>

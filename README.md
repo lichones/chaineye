@@ -15,7 +15,7 @@ license: mit
 탐지·추적하고, 수사·컴플라이언스 담당자를 위한 근거 기반 리포트를 자동 생성하는 웹서비스.
 
 ## 구성
-- **모델**: LightGBM(불법 F1 0.776 / ROC-AUC 0.936, 라이브 추론) + GCN(보완) + SHAP(XAI)
+- **모델**: LightGBM(독립 시간 테스트 불법 F1 0.711 / PR-AUC 0.674 / ROC-AUC 0.899, 라이브 추론) + GCN(실험) + SHAP(XAI)
 - **백엔드**: FastAPI (`/score`, `/trace`, `/explain`, `/report`, `/health`) — `app/backend`
 - **프론트엔드**: React + Cytoscape.js 자금흐름 그래프 — `app/frontend`
 - **데이터**: Elliptic Data Set (203,769 tx / 234,355 edges / 166 features / 49 timesteps)

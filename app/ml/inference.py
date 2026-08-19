@@ -9,6 +9,7 @@ score_tx() and trace_tx().
     inference.score_tx("230425980")
     inference.trace_tx("230425980", hops=2)
 """
+import json
 import os
 from functools import lru_cache
 
@@ -39,15 +40,22 @@ _EDGES = None           # DataFrame with columns txId1, txId2 (int64)
 _ADJ = None             # dict: node -> set(neighbors) (undirected, for tracing)
 _EXPLAINER = None       # shap.TreeExplainer (built lazily on first explanation)
 _EXPECTED_VALUE = 0.0   # SHAP base value for the illicit class
+_DECISION_THRESHOLD = 0.5
 
 
 def load() -> None:
     """Load model + feature table + graph into module globals. Idempotent."""
-    global _MODEL, _FEAT_MATRIX, _ROW_IDX, _EDGES, _ADJ
+    global _MODEL, _FEAT_MATRIX, _ROW_IDX, _EDGES, _ADJ, _DECISION_THRESHOLD
     if _MODEL is not None:
         return
 
     _MODEL = joblib.load(MODEL_PATH)
+    metrics_path = os.path.join(HERE, "metrics.json")
+    try:
+        with open(metrics_path, encoding="utf-8") as fh:
+            _DECISION_THRESHOLD = float(json.load(fh).get("threshold", 0.5))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        _DECISION_THRESHOLD = 0.5
 
     # memory-mapped float32 feature matrix + txId->row index (near-zero RSS;
     # avoids the large transient allocation of pd.read_parquet on this file)
@@ -115,14 +123,30 @@ def _proba(tx_int):
 
 def _risk_int(tx_int):
     p = _proba(tx_int)
-    return int(round(p * 100)) if p is not None else 0
+    return int(round(p * 100)) if p is not None else None
+
+
+def _decision_threshold_int() -> int:
+    return int(round(_DECISION_THRESHOLD * 100))
+
+
+def _is_model_positive(proba) -> bool:
+    """Apply the decision rule to the unrounded model output.
+
+    Integer risk scores and the integer threshold are display values only.
+    Comparing those rounded values can disagree with ``score_tx`` near the
+    threshold.
+    """
+    return proba is not None and proba >= _DECISION_THRESHOLD
 
 
 def score_tx(tx_id: str) -> dict:
     """Score a single transaction and explain it with SHAP.
 
     Returns:
-        {"txId": str, "riskScore": int(0-100), "label": "illicit"|"licit",
+        {"txId": str, "riskScore": int(0-100)|None,
+         "decisionThreshold": int(0-100),
+         "label": "illicit"|"licit"|"unknown",
          "topFactors": [{"feature": str, "impact": float}, ...] up to 6}
     """
     if _MODEL is None:
@@ -131,12 +155,19 @@ def score_tx(tx_id: str) -> dict:
     tx_int = _to_int(tx_id)
     x = _feature_row(tx_int)
     if x is None:
-        # not found (or no features): safe default, do not raise
-        return {"txId": str(tx_id), "riskScore": 0, "label": "licit", "topFactors": []}
+        # Absence from the closed benchmark is not evidence of licit behavior.
+        # Explicitly abstain instead of returning a misleading zero-risk score.
+        return {
+            "txId": str(tx_id),
+            "riskScore": None,
+            "decisionThreshold": _decision_threshold_int(),
+            "label": "unknown",
+            "topFactors": [],
+        }
 
     proba = float(_MODEL.predict_proba(x)[:, 1][0])
     risk = int(round(proba * 100))
-    label = "illicit" if proba >= 0.5 else "licit"
+    label = "illicit" if proba >= _DECISION_THRESHOLD else "licit"
 
     # per-prediction SHAP (explainer built lazily on first call)
     _ensure_explainer()
@@ -157,13 +188,13 @@ def score_tx(tx_id: str) -> dict:
     return {
         "txId": str(tx_id),
         "riskScore": risk,
+        "decisionThreshold": _decision_threshold_int(),
         "label": label,
         "topFactors": top_factors,
     }
 
 
-HIGH_RISK_THRESHOLD = 70   # risk >= this is considered high-risk / illicit
-MAX_TRACE_PATHS = 8        # cap on suspicious laundering paths returned
+MAX_TRACE_PATHS = 8        # cap on model-positive candidate paths returned
 
 
 def trace_tx(tx_id: str, hops: int = 2) -> dict:
@@ -171,15 +202,18 @@ def trace_tx(tx_id: str, hops: int = 2) -> dict:
 
     Returns:
         {"nodes": [{"id": str, "risk": int(0-100), "focus": bool,
-                    "illicit": bool}, ...],
+                    "modelPositive": bool}, ...],
          "edges": [{"source": str, "target": str}, ...],
-         "paths": [[txId, txId, ...], ...]}
+         "candidatePaths": [[txId, txId, ...], ...],
+         "decisionThreshold": int(0-100)}
     Total nodes capped at ~MAX_TRACE_NODES, keeping highest-risk neighbors.
 
-    "illicit" is True when risk >= HIGH_RISK_THRESHOLD (70).
-    "paths" holds up to MAX_TRACE_PATHS suspicious money-laundering chains:
+    "modelPositive" is True when the raw model output meets the
+    validation-selected threshold. ``risk`` is rounded for display only.
+    "candidatePaths" holds up to MAX_TRACE_PATHS model-positive review candidates:
     directed walks (following edge direction) that start at the focus node and
-    END at a high-risk (illicit) node, with length between 2 and hops+1 nodes.
+    END at a model-positive node, with length between 2 and hops+1 nodes.
+    A returned path is triage evidence, not proof of money laundering.
     """
     if _MODEL is None:
         load()
@@ -187,16 +221,19 @@ def trace_tx(tx_id: str, hops: int = 2) -> dict:
     focus = _to_int(tx_id)
     if focus is None or focus not in _ADJ:
         # unknown node in graph: return just the focus node if it has features
-        risk = _risk_int(focus) if focus is not None else 0
+        proba = _proba(focus) if focus is not None else None
+        risk = int(round(proba * 100)) if proba is not None else None
         return {
             "nodes": [{
                 "id": str(tx_id),
                 "risk": risk,
                 "focus": True,
-                "illicit": risk >= HIGH_RISK_THRESHOLD,
+                "modelPositive": _is_model_positive(proba),
+                "scored": risk is not None,
             }],
             "edges": [],
-            "paths": [],
+            "candidatePaths": [],
+            "decisionThreshold": _decision_threshold_int(),
         }
 
     # BFS up to `hops` on the undirected adjacency
@@ -215,27 +252,36 @@ def trace_tx(tx_id: str, hops: int = 2) -> dict:
     # cap nodes: always keep focus, then highest-risk neighbors
     neighbors = [n for n in visited if n != focus]
     if len(neighbors) + 1 > MAX_TRACE_NODES:
-        neighbors.sort(key=lambda n: _risk_int(n), reverse=True)
+        neighbors.sort(
+            key=lambda n: (_risk_int(n) if _risk_int(n) is not None else -1),
+            reverse=True,
+        )
         neighbors = neighbors[: MAX_TRACE_NODES - 1]
     kept = set(neighbors) | {focus}
 
-    # risk lookup for every kept node (computed once, reused below)
-    risk_map = {focus: _risk_int(focus)}
+    # Raw probabilities drive decisions; rounded integers are display-only.
+    proba_map = {focus: _proba(focus)}
     for n in neighbors:
-        risk_map[n] = _risk_int(n)
+        proba_map[n] = _proba(n)
+    risk_map = {
+        n: int(round(p * 100)) if p is not None else None
+        for n, p in proba_map.items()
+    }
 
     nodes = [{
         "id": str(focus),
         "risk": risk_map[focus],
         "focus": True,
-        "illicit": risk_map[focus] >= HIGH_RISK_THRESHOLD,
+        "modelPositive": _is_model_positive(proba_map[focus]),
+        "scored": risk_map[focus] is not None,
     }]
     for n in neighbors:
         nodes.append({
             "id": str(n),
             "risk": risk_map[n],
             "focus": False,
-            "illicit": risk_map[n] >= HIGH_RISK_THRESHOLD,
+            "modelPositive": _is_model_positive(proba_map[n]),
+            "scored": risk_map[n] is not None,
         })
 
     # edges among kept nodes only (directed as in original edge list)
@@ -245,8 +291,8 @@ def trace_tx(tx_id: str, hops: int = 2) -> dict:
              for a, b in zip(sub["txId1"].to_numpy(), sub["txId2"].to_numpy())]
 
     # ------------------------------------------------------------------ #
-    # Suspicious laundering paths: directed walks from the focus node that
-    # end at a high-risk node, length 2..hops+1 nodes (1..hops edges).
+    # Candidate paths: directed walks from the focus node that end at a
+    # model-positive node, length 2..hops+1 nodes (1..hops edges).
     # ------------------------------------------------------------------ #
     dadj = {}  # directed adjacency among kept nodes
     for a, b in zip(sub["txId1"].to_numpy(), sub["txId2"].to_numpy()):
@@ -265,7 +311,7 @@ def trace_tx(tx_id: str, hops: int = 2) -> dict:
             if nxt in path:          # avoid cycles within a single path
                 continue
             new_path = path + [nxt]
-            if risk_map.get(nxt, 0) >= HIGH_RISK_THRESHOLD:
+            if _is_model_positive(proba_map.get(nxt)):
                 key = tuple(new_path)
                 if key not in seen_paths:
                     seen_paths.add(key)
@@ -278,7 +324,12 @@ def trace_tx(tx_id: str, hops: int = 2) -> dict:
 
     _walk(focus, [focus])
 
-    return {"nodes": nodes, "edges": edges, "paths": paths}
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "candidatePaths": paths,
+        "decisionThreshold": _decision_threshold_int(),
+    }
 
 
 if __name__ == "__main__":
@@ -288,4 +339,4 @@ if __name__ == "__main__":
         print(json.dumps(score_tx(t), ensure_ascii=False))
         tr = trace_tx(t, hops=2)
         print(f"trace {t}: {len(tr['nodes'])} nodes, {len(tr['edges'])} edges, "
-              f"{len(tr['paths'])} paths")
+              f"{len(tr['candidatePaths'])} candidate paths")

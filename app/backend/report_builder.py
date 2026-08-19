@@ -1,15 +1,9 @@
 """
-Template-based Korean report generator for ChainEye (체인아이).
+Deterministic Korean report fallback for ChainEye (체인아이).
 
-No external / paid LLM API is used here — this is the MVP compliance-report
-generator. It renders a structured, professional FIU/compliance-style report
-purely from the inputs.
-
-TODO(claude-api): This template renderer can later be swapped for (or augmented
-by) a Claude API call to produce richer narrative prose. When doing so, keep
-this template as the deterministic fallback for offline / rate-limited use.
-See the `claude-api` skill for model ids and SDK usage. DO NOT implement the
-API call now (MVP requirement: template-based, no paid API).
+The API layer may use an explicitly configured LLM provider. This renderer is
+the keyless/offline fallback and deliberately separates model output from
+observed graph facts and analyst decisions.
 """
 
 from __future__ import annotations
@@ -35,13 +29,13 @@ _FEATURE_KO: Dict[str, str] = {
 }
 
 
-def _grade(score: int) -> str:
-    """Map a 0-100 score to a Korean risk grade band."""
-    if score >= 70:
-        return "위험"
-    if score >= 40:
-        return "주의"
-    return "안전"
+def _grade(score: int, label: str, decision_threshold: int) -> str:
+    """Map a score to an analyst-review priority, not a crime judgement."""
+    if str(label).lower() == "illicit" or score >= decision_threshold:
+        return "우선 검토"
+    if score >= max(1, decision_threshold // 2):
+        return "추가 검토"
+    return "낮은 우선순위"
 
 
 def _feature_ko(feature: str) -> str:
@@ -53,49 +47,55 @@ def _factor_sentence(factor: Dict[str, Any]) -> str:
     impact = float(factor.get("impact", 0.0))
     name = _feature_ko(feature)
     if impact >= 0:
-        direction = "위험도를 높이는 방향"
+        direction = "모델 출력을 높이는 방향"
     else:
-        direction = "위험도를 낮추는 방향"
-    return f"- {name}: 판단 기여도 {impact:+.3f} ({direction}으로 작용)"
+        direction = "모델 출력을 낮추는 방향"
+    return f"- {name}: 모델 기여도 {impact:+.3f} ({direction})"
 
 
 def build_report(
     tx_id: str,
     score: int,
     label: str,
+    decision_threshold: int,
     top_factors: List[Dict[str, Any]],
     graph_stats: Dict[str, Any],
 ) -> str:
-    """Render the full Korean investigation/compliance report as a string."""
-    grade = _grade(int(score))
-    label_ko = "불법(illicit) 의심" if str(label).lower() == "illicit" else "정상(licit) 추정"
+    """Render a model-review support report without asserting criminal facts."""
+    grade = _grade(int(score), label, int(decision_threshold))
+    label_ko = (
+        "모델 양성(illicit class)"
+        if str(label).lower() == "illicit"
+        else "모델 음성(licit class)"
+    )
 
     node_count = int(graph_stats.get("nodeCount", 0))
     edge_count = int(graph_stats.get("edgeCount", 0))
-    # 프론트엔드는 고위험(위험도 70+) 이웃 수를 highRiskCount 로 전송한다.
+    # 프론트엔드는 모델 임계값 이상 이웃 수를 highRiskCount 로 전송한다.
     # illicitNeighbors(구 스키마)가 오면 우선 사용하고, 없으면 highRiskCount 로 폴백.
     illicit_neighbors = int(
         graph_stats.get("illicitNeighbors")
         or graph_stats.get("highRiskCount", 0)
     )
     # 초점 노드 자신이 고위험이면 이웃 카운트에서 제외 (자기 자신은 이웃이 아님)
-    if illicit_neighbors > 0 and int(score) >= 70:
+    if illicit_neighbors > 0 and str(label).lower() == "illicit":
         illicit_neighbors = max(0, illicit_neighbors - 1)
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 한 줄 요지
-    if grade == "위험":
+    # 한 줄 요지: 임계값 통과는 검토 우선순위일 뿐, 불법 확정이 아니다.
+    if grade == "우선 검토":
         summary_line = (
-            "해당 거래는 자금세탁 위험이 높은 것으로 평가되며 즉시 심화 검토가 필요합니다."
+            "검증 세트에서 선택한 임계값 이상으로, 분석관의 우선 검토 대상입니다. "
+            "불법 거래나 자금세탁을 확정하는 결과는 아닙니다."
         )
-    elif grade == "주의":
+    elif grade == "추가 검토":
         summary_line = (
-            "해당 거래는 일부 위험 신호가 관측되어 추가 모니터링이 권고됩니다."
+            "모델 출력이 임계값에 근접해 추가 자료 확인을 고려할 수 있습니다."
         )
     else:
         summary_line = (
-            "해당 거래에서는 유의미한 자금세탁 위험 신호가 관측되지 않았습니다."
+            "현재 모델 출력은 임계값 미만입니다. 이는 정상 거래임을 입증하지 않습니다."
         )
 
     # 핵심 판단 근거 (상위 3~5개)
@@ -105,70 +105,73 @@ def build_report(
     else:
         factors_block = "- 제공된 판단 근거(topFactors)가 없습니다."
 
-    # 자금흐름 관찰
+    # 그래프 관찰: 엣지는 원본 데이터의 방향성 인접 관계만 뜻한다.
     if node_count > 0:
         neighbor_ratio = (illicit_neighbors / node_count) * 100.0
     else:
         neighbor_ratio = 0.0
-    flow_block = f"- 추적 그래프 내 연결 노드 수: 총 {node_count:,}개"
+    flow_block = f"- 표시된 방향성 거래 인접 노드 수: 총 {node_count:,}개"
     if edge_count > 0:
-        flow_block += f" / 자금 이동(엣지) {edge_count:,}건"
+        flow_block += f" / 원본 그래프 인접 엣지 {edge_count:,}건"
     flow_block += (
-        f"\n- 위험(불법 의심) 이웃 노드 수: {illicit_neighbors:,}개 "
+        f"\n- 모델 양성으로 분류된 이웃 거래 수: {illicit_neighbors:,}개 "
         f"(전체의 약 {neighbor_ratio:.1f}%)"
     )
     if illicit_neighbors > 0:
         flow_block += (
-            "\n- 위험 이웃과의 직접 연결이 확인되어 자금 혼합·경유 가능성을 배제할 수 없습니다."
+            "\n- 원본 그래프에서 직접 인접한 모델 양성 거래가 있습니다. "
+            "동일 자금의 이동, 주소 소유권 또는 범죄 관련성을 입증하지는 않습니다."
         )
     else:
-        flow_block += "\n- 직접 연결된 위험 이웃은 확인되지 않았습니다."
+        flow_block += (
+            "\n- 현재 표시 범위에는 직접 인접한 모델 양성 거래가 없습니다. "
+            "안전하거나 정상이라는 의미는 아닙니다."
+        )
 
-    # 권고 조치 (등급별)
-    if grade == "위험":
+    # 권고 조치: 자동 STR 결정을 내리지 않고 분석관 검토 단계를 명시한다.
+    if grade == "우선 검토":
         action_block = (
-            "- 의심거래보고(STR) 작성 및 보고 여부를 우선 검토하십시오.\n"
-            "- 해당 주소/거래에 대한 계좌·지갑 모니터링을 강화하십시오.\n"
-            "- 연결된 위험 이웃 노드를 포함하여 자금흐름을 수사 참고자료로 정리하십시오.\n"
-            "- 필요 시 거래소 KYC 정보 및 트래블룰(Travel Rule) 대상 여부를 확인하십시오."
+            "- 독립 원천자료와 고객확인 정보가 있다면 분석관이 함께 검토하십시오.\n"
+            "- 모델 기여도는 설명 자료로만 사용하고 실제 거래 증거로 해석하지 마십시오.\n"
+            "- STR 작성·보고 여부는 내부 절차와 담당자의 최종 판단을 거쳐 결정하십시오."
         )
-    elif grade == "주의":
+    elif grade == "추가 검토":
         action_block = (
-            "- 거래 패턴을 일정 기간 지속 모니터링하고 임계치 초과 시 재평가하십시오.\n"
-            "- 추가 거래 발생 시 상대방 주소의 위험도를 함께 점검하십시오.\n"
-            "- 필요 시 고객확인(EDD, 강화된 고객확인) 절차를 검토하십시오."
+            "- 추가 원천자료가 확보되면 재평가하십시오.\n"
+            "- 업무 규칙상 필요할 때만 분석관 검토 대기열에 유지하십시오."
         )
     else:
         action_block = (
-            "- 별도의 즉각 조치는 불필요하나 정기 모니터링 대상에는 유지하십시오.\n"
-            "- 향후 위험 신호 변화 시 재평가하십시오."
+            "- 모델 음성만으로 종결하지 말고 기존 업무 규칙을 적용하십시오.\n"
+            "- 새로운 독립 정보가 들어오면 다시 평가하십시오."
         )
 
     report = f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- 체인아이(ChainEye) 자금세탁 위험 분석 보고서
+ 체인아이(ChainEye) AML 모델 검토 지원 보고서
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  대상 거래 ID : {tx_id}
- 위험 점수    : {int(score)} / 100  (등급: {grade})
+ 모델 점수    : {int(score)} / 100  (검토 임계값: {int(decision_threshold)}, 우선순위: {grade})
  모델 판정    : {label_ko}
  생성 일시    : {generated_at}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-【위험 요약】
-등급: {grade} (위험 점수 {int(score)}점)
+【모델 출력 요약】
+검토 우선순위: {grade} (모델 점수 {int(score)}점, 검토 임계값 {int(decision_threshold)}점)
 {summary_line}
 
-【핵심 판단 근거】
+【모델 기여도】
 {factors_block}
 
-【자금흐름 관찰】
+【그래프 관찰 사실】
 {flow_block}
 
 【권고 조치】
 {action_block}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- ※ 본 보고서는 체인아이 자동 분석 결과이며, 최종 판단과
-    보고 여부 결정은 담당 분석관의 검토를 거쳐야 합니다.
+ ※ 본 결과는 Elliptic 벤치마크 거래에 대한 모델 예측입니다.
+    실시간 주소 위험도나 범죄 사실을 뜻하지 않으며, 최종 판단과
+    보고 여부는 독립 자료를 확인한 담당 분석관이 결정해야 합니다.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
     return report

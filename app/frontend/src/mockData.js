@@ -50,6 +50,7 @@ export function mockScore(txId) {
   return {
     txId,
     riskScore,
+    decisionThreshold: 50,
     label: illicit ? 'illicit' : 'licit',
     topFactors,
   }
@@ -58,7 +59,7 @@ export function mockScore(txId) {
 // ---------------------------------------------------------------------
 // POST /trace
 // ---------------------------------------------------------------------
-const HIGH_RISK = 70 // 고위험(illicit) 임계값
+const HIGH_RISK = 50 // mock 모델 판정 임계값
 const MAX_PATHS = 8
 
 export function mockTrace(txId, hops = 2) {
@@ -105,13 +106,13 @@ export function mockTrace(txId, hops = 2) {
     )
   }
 
-  // 각 노드에 illicit 플래그 부여 (risk >= 70)
+  // 각 노드에 모델 임계값 기준 modelPositive 플래그 부여
   for (const n of nodes) {
-    n.illicit = n.risk >= HIGH_RISK
+    n.modelPositive = n.risk >= HIGH_RISK
   }
 
-  const paths = buildSuspiciousPaths(focusId, nodes, edges, hops)
-  return { nodes, edges, paths }
+  const candidatePaths = buildSuspiciousPaths(focusId, nodes, edges, hops)
+  return { nodes, edges, candidatePaths, decisionThreshold: HIGH_RISK }
 }
 
 // focus 에서 시작해 고위험 노드에서 끝나는 방향성 경로(길이 2..hops+1) 탐색
@@ -151,8 +152,9 @@ function buildSuspiciousPaths(focus, nodes, edges, hops) {
 // ---------------------------------------------------------------------
 // POST /report
 // ---------------------------------------------------------------------
-export function mockReport(txId, score, topFactors, graphStats) {
-  const label = score >= 50 ? '위험(illicit)' : '정상(licit)'
+export function mockReport(txId, score, label, decisionThreshold, topFactors, graphStats) {
+  const modelLabel = label === 'illicit' ? '모델 양성(illicit class)' : '모델 음성(licit class)'
+  const priority = score >= decisionThreshold ? '우선 검토' : '낮은 우선순위'
   const factorLines = (topFactors || [])
     .map(
       (f, i) =>
@@ -163,33 +165,31 @@ export function mockReport(txId, score, topFactors, graphStats) {
   const stats = graphStats || {}
 
   return {
-    report: `# ChainEye 자금세탁 조사 리포트
+    generator: 'template',
+    report: `# ChainEye AML 모델 검토 지원 보고서
 
 ## 1. 개요
 - 대상 트랜잭션: \`${txId}\`
-- 종합 위험 점수: **${score}/100** (${label})
+- 모델 점수: **${score}/100** (검토 임계값 ${decisionThreshold}, ${priority})
+- 모델 판정: ${modelLabel}
 - 분석 일시: ${new Date().toLocaleString('ko-KR')}
 - 분석 엔진: ChainEye v0.1 (그래프 + ML 하이브리드)
 
-## 2. 핵심 위험 근거
-${factorLines || '- 유의미한 위험 요인이 탐지되지 않았습니다.'}
+## 2. 모델 기여도
+${factorLines || '- 제공된 모델 기여도가 없습니다.'}
 
-## 3. 자금 흐름 분석
-본 트랜잭션을 중심으로 총 ${stats.nodeCount ?? '-'}개 노드, ${stats.edgeCount ?? '-'}개 자금 이동 경로를 추적하였습니다.
-그래프상 고위험(위험도 70 이상) 노드는 ${stats.highRiskCount ?? '-'}개로 확인되며,
-입력측 자금은 다수 주소로부터 집결(fan-in)된 후 출력측에서 여러 신규 주소로
-분산(fan-out)되는 전형적인 계층화(layering) 패턴이 관찰됩니다.
+> 기여도는 모델 출력에 대한 설명이며 거래 증거가 아닙니다.
 
-## 4. 판단 및 권고
-- 종합 위험 점수와 그래프 구조를 종합할 때 해당 자금 흐름은 **${label}**으로 평가됩니다.
-- ${
-      score >= 50
-        ? '자금세탁 방지(AML) 관점에서 즉시 추가 검토 및 의심거래보고(STR) 대상 검토를 권고합니다.'
-        : '현시점 즉각적 위험 징후는 낮으나 지속적 모니터링을 권고합니다.'
-    }
-- 후속 조치: 연결된 고위험 주소에 대한 확장 추적(3홉 이상) 및 거래소 KYC 정보 대조.
+## 3. 그래프 관찰 사실
+원본 데이터의 방향성 인접 관계로 총 ${stats.nodeCount ?? '-'}개 노드와 ${stats.edgeCount ?? '-'}개 엣지를 표시했습니다.
+모델 임계값 이상 노드는 ${stats.highRiskCount ?? '-'}개입니다. 인접 관계만으로 동일 자금 이동,
+주소 소유권 또는 범죄 관련성을 입증할 수 없습니다.
 
-> ⚠️ 본 리포트는 자동 생성된 참고 자료이며, 최종 판단은 조사 담당자의 검토가 필요합니다.
+## 4. 권고 조치
+- ${score >= decisionThreshold ? '독립 원천자료가 있다면 분석관의 우선 검토 대기열에 배치합니다.' : '모델 음성만으로 정상 또는 안전을 확정하지 않습니다.'}
+- STR 작성·보고 여부는 내부 절차와 담당자의 최종 판단을 거쳐 결정합니다.
+
+> ⚠️ Elliptic 벤치마크 모델 예측이며 실시간 주소 위험도나 범죄 사실이 아닙니다.
 `,
   }
 }

@@ -14,14 +14,16 @@ C:\Users\DELL\fsec-ai-challenge-2026\.venv\Scripts\python.exe -m uvicorn main:ap
 - CORS 허용 오리진: `http://localhost:5173`, `http://localhost:3000`
 - Swagger 문서: http://localhost:8000/docs
 
-## 모델 연동 (MODEL / MOCK 모드)
+## 모델 연동 (MODEL / UNAVAILABLE / 명시적 MOCK 모드)
 
 기동 시 `app/ml/inference.py` 를 import 시도합니다.
 
 - **MODEL 모드**: import + `inference.load()` 성공 시. `/score`, `/trace` 는
   `inference.score_tx`, `inference.trace_tx` 로 위임됩니다.
-- **MOCK 모드**: import/load 실패 시(모델 미완성). 내장 mock provider가 동일한
-  스키마의 현실적인 샘플 데이터를 반환하며 `/health` 의 `modelLoaded=false`.
+- **UNAVAILABLE 모드(기본 fail-closed)**: import/load 실패 시 `/score`·`/trace`는
+  503을 반환한다. 합성 데이터가 실제 모델 응답처럼 보이는 것을 막는다.
+- **MOCK 모드(개발 전용)**: `CHAINEYE_ALLOW_MOCK_BACKEND=1`을 명시한 경우에만
+  내장 provider가 동일 스키마의 합성 샘플을 반환한다.
 
 어느 모드로 떴는지는 시작 로그에 출력됩니다.
 
@@ -39,7 +41,7 @@ C:\Users\DELL\fsec-ai-challenge-2026\.venv\Scripts\python.exe -m uvicorn main:ap
 
 ```
 GET /health
--> {"status":"ok","modelLoaded":false}
+-> {"status":"ok","modelLoaded":false,"mode":"unavailable"}
 
 POST /score  {"txId":"tx_abc123"}
 -> {"txId":"tx_abc123","riskScore":72,"label":"illicit",
@@ -55,7 +57,7 @@ POST /explain {"txId":"tx_abc123"}
 POST /report  {"txId":"tx_abc123","score":72,"label":"illicit",
                "topFactors":[...],
                "graphStats":{"nodeCount":9,"illicitNeighbors":3}}
--> {"report":"━━━ ... 체인아이 자금세탁 위험 분석 보고서 ... ━━━"}
+-> {"report":"━━━ ... 체인아이 AML 모델 검토 지원 보고서 ... ━━━","generator":"template"}
 ```
 
 ## 보고서 생성 (LLM → 템플릿 폴백)
@@ -65,7 +67,7 @@ POST /report  {"txId":"tx_abc123","score":72,"label":"illicit",
 1. **1순위 — LLM(선택형 provider)**: Claude(`claude_report`) 또는 OpenAI GPT
    (`openai_report`) SDK 로 FIU/컴플라이언스 스타일의 전문 한글 보고서를 생성합니다.
    제공된 수치·라벨·그래프 통계만을 근거로 삼도록(환각 금지) 프롬프트가 구성되며,
-   템플릿과 동일한 4개 섹션 구조(위험 요약 / 핵심 판단 근거 / 자금흐름 관찰 / 권고
+   템플릿과 동일한 4개 섹션 구조(모델 출력 요약 / 모델 기여도 / 그래프 관찰 사실 / 권고
    조치)를 따릅니다. 프롬프트는 두 provider 가 동일한 것을 공유합니다.
 2. **폴백 — 템플릿**: LLM 경로가 `None` 을 반환하면 `report_builder.build_report()`
    의 결정론적 템플릿으로 폴백합니다. 템플릿 경로는 항상 동작합니다.
@@ -84,7 +86,7 @@ POST /report  {"txId":"tx_abc123","score":72,"label":"illicit",
 어느 경로가 실행됐는지는 로그에 출력됩니다
 (`/report served via LLM (Claude).`, `/report served via LLM (OpenAI).`,
 또는 `/report served via template fallback.`).
-응답 스키마(`{"report": str}`)는 경로와 무관하게 동일합니다.
+응답은 보고서와 실제 생성 경로(`generator=claude|openai|template`)를 함께 반환합니다.
 
 ### 환경변수
 
@@ -128,7 +130,7 @@ $env:CHAINEYE_OPENAI_MODEL = "gpt-4o"            # (선택)
 ## 파일 구성
 
 - `main.py` — FastAPI 앱, 엔드포인트, Pydantic 모델, 모델 연동/폴백, 정적 서빙.
-- `mock_provider.py` — 모델 미완성 시 결정론적 샘플 데이터 제공.
+- `mock_provider.py` — 명시적으로 켠 개발 모드에서만 결정론적 합성 샘플 제공.
 - `claude_report.py` — Claude API(LLM) 기반 한글 보고서 생성기(우아한 폴백).
 - `openai_report.py` — OpenAI(GPT) 기반 한글 보고서 생성기(우아한 폴백, 프롬프트 공유).
 - `report_builder.py` — 템플릿 기반 한글 보고서 생성기(LLM 폴백 및 오프라인용).

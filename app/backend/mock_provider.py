@@ -67,21 +67,22 @@ def score_tx(tx_id: str) -> Dict[str, Any]:
     return {
         "txId": tx_id,
         "riskScore": risk_score,
+        "decisionThreshold": 50,
         "label": label,
         "topFactors": top_factors,
     }
 
 
-HIGH_RISK_THRESHOLD = 70   # risk >= this is high-risk / illicit
-MAX_TRACE_PATHS = 8        # cap on suspicious laundering paths returned
+HIGH_RISK_THRESHOLD = 50   # mock model decision threshold
+MAX_TRACE_PATHS = 8        # cap on model-positive candidate paths returned
 
 
 def trace_tx(tx_id: str, hops: int = 2) -> Dict[str, Any]:
     """Mock replacement for inference.trace_tx.
 
     Builds a small deterministic BFS-like graph radiating from the focus tx.
-    Mirrors the real inference shape: each node carries an "illicit" flag and
-    the result includes a top-level "paths" list of suspicious directed chains.
+    Mirrors the real inference shape: each node carries a "modelPositive" flag
+    and the result includes a top-level "candidatePaths" list.
     """
     hops = max(1, min(int(hops), 4))
     seed = _seed(tx_id)
@@ -114,12 +115,17 @@ def trace_tx(tx_id: str, hops: int = 2) -> Dict[str, Any]:
                 next_frontier.append(child)
         frontier = next_frontier
 
-    # add the illicit flag to every node (risk >= 70)
+    # add the model-positive flag to every node
     for n in nodes:
-        n["illicit"] = n["risk"] >= HIGH_RISK_THRESHOLD
+        n["modelPositive"] = n["risk"] >= HIGH_RISK_THRESHOLD
 
     paths = _suspicious_paths(tx_id, nodes, edges, hops)
-    return {"nodes": nodes, "edges": edges, "paths": paths}
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "candidatePaths": paths,
+        "decisionThreshold": HIGH_RISK_THRESHOLD,
+    }
 
 
 def _suspicious_paths(

@@ -1,5 +1,5 @@
 """
-OpenAI(GPT) 기반 한글 자금세탁 위험 분석 보고서 생성기 (ChainEye / 체인아이).
+OpenAI(GPT) 기반 한글 AML 모델 검토 지원 보고서 생성기 (ChainEye / 체인아이).
 
 `claude_report.py` 의 OpenAI 대응 버전입니다. 동일한 한글 프롬프트를 재사용하며
 (단일 출처: `claude_report._build_prompt`), OpenAI 공식 Python SDK 의 Chat
@@ -50,6 +50,7 @@ def generate_report_llm(
     tx_id: str,
     score: int,
     label: str,
+    decision_threshold: int,
     top_factors: List[Dict[str, Any]],
     graph_stats: Dict[str, Any],
 ) -> Optional[str]:
@@ -74,7 +75,9 @@ def generate_report_llm(
     model = os.environ.get("CHAINEYE_OPENAI_MODEL", _DEFAULT_MODEL)
 
     try:
-        system, user = _build_prompt(tx_id, score, label, top_factors, graph_stats)
+        system, user = _build_prompt(
+            tx_id, score, label, decision_threshold, top_factors, graph_stats
+        )
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model=model,

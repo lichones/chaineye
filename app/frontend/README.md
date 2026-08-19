@@ -7,7 +7,7 @@ Vite + React (JavaScript) + Cytoscape.js 기반 단일 페이지 앱.
 - **입력바**: 비트코인 트랜잭션 ID(txId) 입력 + `분석` 버튼 + 예시 칩
 - **위험도 패널(좌)**: 0~100 위험 점수 게이지 + 라벨(안전/주의/위험) + 핵심 위험 근거
 - **자금 흐름 그래프(중앙)**: Cytoscape.js 방향 그래프. 대상/고위험 노드는 빨강, 일반 노드는 회색
-- **AI 조사 리포트(우)**: 자동 생성된 한국어 조사 리포트(마크다운-유사 렌더링)
+- **검토 지원 리포트(우)**: 생성 경로를 표시하는 한국어 AML 모델 검토 리포트
 
 ## 실행 방법
 ```bash
@@ -63,7 +63,7 @@ VITE_API_BASE=https://api.example.com npm run build
 - `POST /trace` — body `{"txId":"...","hops":2}`
   → `{"nodes":[{"id":"...","risk":0-100,"focus":true|false}],"edges":[{"source":"...","target":"..."}]}`
 - `POST /report` — body `{"txId":"...","score":...,"topFactors":[...],"graphStats":{...}}`
-  → `{"report":"<korean text>"}`
+  → `{"report":"<korean text>","generator":"claude|openai|template"}`
 
 ## 주요 파일
 ```
