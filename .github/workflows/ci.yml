@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -22,6 +24,7 @@ jobs:
       - run: python -m pip install -r deploy/requirements-dev.txt
       - run: python -m ruff check .
       - run: python -m pytest
+      - run: python app/ml/verify_inference.py
       - run: python -m pip_audit -r deploy/requirements.txt
 
   frontend:
@@ -47,6 +50,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - name: Build production image
         run: docker build -t chaineye:ci .
       - name: Verify container and core APIs
