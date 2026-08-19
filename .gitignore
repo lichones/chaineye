@@ -33,3 +33,8 @@ Thumbs.db
 
 # --- Docker verify images / logs ---
 *.log
+
+# --- Local build and submission artifacts ---
+tmp/
+output/
+NUL
